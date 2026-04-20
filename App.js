@@ -137,7 +137,7 @@ export default function App() {
               onChangeText={setPrice}
             />
             <TouchableOpacity style={styles.primaryBtn} onPress={calculate}>
-              <Text style={styles.primaryBtnText}>ANALUSERA LIVSKOSTNAD</Text>
+              <Text style={styles.primaryBtnText}>ANALYSERA LIVSKOSTNAD</Text>
             </TouchableOpacity>
           </View>
         )}
