@@ -1,6 +1,6 @@
 // App.js
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Modal, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Modal, Dimensions, Animated, Share, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
@@ -14,20 +14,36 @@ export default function App() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedDemo, setSelectedDemo] = useState(null);
+  
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const scaleAnim = useState(new Animated.Value(0.9))[0];
 
   useEffect(() => {
     loadData();
+    animateEntrance();
   }, []);
 
   useEffect(() => {
     let interval = null;
     if (isActive && secondsLeft > 0) {
       interval = setInterval(() => setSecondsLeft((s) => s - 1), 1000);
-    } else if (secondsLeft === 0) {
+    } else if (secondsLeft === 0 && isActive) {
       setIsActive(false);
+      Animated.sequence([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1, friction: 5, useNativeDriver: true })
+      ]).start();
     }
     return () => clearInterval(interval);
   }, [isActive, secondsLeft]);
+
+  const animateEntrance = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 8, useNativeDriver: true })
+    ]).start();
+  };
 
   const loadData = async () => {
     try {
@@ -58,8 +74,20 @@ export default function App() {
     if (!bought) {
       newTotal += result.price;
       newStreak += 1;
+      
+      // Visa konfetti-känsla (alert för MVP)
+      Alert.alert(
+        "🎉 BRA BESLUT!",
+        `Du sparade ${result.price} kr och din streak är nu ${newStreak} dagar!`,
+        [{ text: "🔥 Fortsätt så!" }]
+      );
     } else {
       newStreak = 0;
+      Alert.alert(
+        "😅 Ingen skam",
+        "Nästa gång kanske du väntar lite längre?",
+        [{ text: "👍" }]
+      );
     }
 
     setTotalSaved(newTotal);
@@ -68,104 +96,201 @@ export default function App() {
     await AsyncStorage.setItem('@streak', newStreak.toString());
     setResult(null);
     setPrice('');
+    setSelectedDemo(null);
+  };
+
+  const handleShare = async () => {
+    if (!result) return;
+    
+    const shareMessage = `💀 ${result.hours} TIMMAR AV MITT LIV!\n\nEn ${selectedDemo || 'sak'} för ${result.price} kr kostar mig ${result.hours} timmars arbete. Värt det?\n\nLadda ner Wait 10 - kolla vad dina köp kostar!`;
+    
+    try {
+      await Share.share({
+        message: shareMessage,
+        title: 'Wait 10 - Impulskontroll'
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const demoItems = [
+    { name: "🎮 PS5", price: 6500, hours: (6500 / parseFloat(hourlyWage)).toFixed(1) },
+    { name: "☕️ Kaffemaskin", price: 12000, hours: (12000 / parseFloat(hourlyWage)).toFixed(1) },
+    { name: "👟 Nike Skor", price: 1500, hours: (1500 / parseFloat(hourlyWage)).toFixed(1) },
+    { name: "📱 iPhone 16", price: 13000, hours: (13000 / parseFloat(hourlyWage)).toFixed(1) }
+  ];
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins === 0 && secs === 0) return "KLAR!";
+    if (mins === 0) return `${secs} sek`;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getStreakEmoji = () => {
+    if (streak >= 30) return "👑";
+    if (streak >= 7) return "🔥🔥";
+    if (streak >= 3) return "🔥";
+    if (streak > 0) return "🌱";
+    return "💀";
   };
 
   return (
     <View style={styles.main}>
-      <ScrollView contentContainerStyle={styles.container} bounces={false}>
+      <ScrollView contentContainerStyle={styles.container} bounces={false} showsVerticalScrollIndicator={false}>
         
-        {/* HEADER */}
+        {/* HEADER - Minimalistisk */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.iconCircle}>
-            <Text style={{fontSize: 20}}>⚙️</Text>
+          <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.iconButton}>
+            <Text style={styles.iconText}>⚡️</Text>
           </TouchableOpacity>
-          <View style={styles.logoContainer}>
+          <View>
             <Text style={styles.logoText}>WAIT 10</Text>
+            <Text style={styles.tagline}>impulskontroll</Text>
           </View>
-          <View style={styles.iconCircle}>
-             <Text style={{fontSize: 18, color: '#39FF14', fontWeight: 'bold'}}>{streak}</Text>
-          </View>
-        </View>
-
-        {/* STATS BAR */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>SPARAD TID</Text>
-            <Text style={styles.statValue}>{(totalSaved / parseFloat(hourlyWage)).toFixed(0)}H</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>VINST</Text>
-            <Text style={styles.statValue}>{totalSaved} kr</Text>
+          <View style={styles.streakBadge}>
+            <Text style={styles.streakEmoji}>{getStreakEmoji()}</Text>
+            <Text style={styles.streakNumber}>{streak}</Text>
           </View>
         </View>
 
-        {/* CALC SECTION */}
+        {/* STATS - Mer framträdande */}
+        <Animated.View style={[styles.statsContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+          <View style={styles.statBlock}>
+            <Text style={styles.statValue}>{(totalSaved / parseFloat(hourlyWage)).toFixed(0)}</Text>
+            <Text style={styles.statLabel}>timmar sparade</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBlock}>
+            <Text style={styles.statValue}>{totalSaved}</Text>
+            <Text style={styles.statLabel}>kronor sparade</Text>
+          </View>
+        </Animated.View>
+
+        {/* MAIN CALCULATION AREA */}
         {!result ? (
-          <View style={styles.calcArea}>
-            <Text style={styles.inputHint}>VAD KOSTAR DET DU VILL HA?</Text>
-            <TextInput
-              style={styles.bigInput}
-              keyboardType="numeric"
-              placeholder="0"
-              placeholderTextColor="#222"
-              value={price}
-              onChangeText={setPrice}
-              maxLength={7}
-            />
+          <Animated.View style={[styles.calcArea, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+            <Text style={styles.questionText}>Vad vill du köpa?</Text>
+            
+            <View style={styles.demoGrid}>
+              {demoItems.map((item, idx) => (
+                <TouchableOpacity 
+                  key={idx}
+                  style={styles.demoChip}
+                  onPress={() => {
+                    setPrice(item.price.toString());
+                    setSelectedDemo(item.name);
+                  }}
+                >
+                  <Text style={styles.demoChipText}>{item.name}</Text>
+                  <Text style={styles.demoChipPrice}>{item.price} kr</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.priceInput}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#333"
+                value={price}
+                onChangeText={(text) => {
+                  setPrice(text);
+                  setSelectedDemo(null);
+                }}
+                maxLength={7}
+              />
+              <Text style={styles.currencySymbol}>kr</Text>
+            </View>
+
             <TouchableOpacity 
-              style={[styles.mainBtn, {opacity: price ? 1 : 0.5}]} 
+              style={[styles.calcButton, !price && styles.calcButtonDisabled]} 
               onPress={calculate}
               disabled={!price}
             >
-              <Text style={styles.mainBtnText}>ANALUSERA</Text>
+              <Text style={styles.calcButtonText}>
+                {price ? "💀 VISA TID 💀" : "skriv ett pris"}
+              </Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         ) : (
-          /* RESULT & TIMER */
-          <View style={styles.resultArea}>
-            <View style={styles.hoursCircle}>
-               <Text style={styles.hoursVal}>{result.hours}H</Text>
-               <Text style={styles.hoursLabel}>AV DITT LIV</Text>
+          /* RESULT SCREEN - Chockerande design */
+          <Animated.View style={[styles.resultArea, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+            <View style={styles.resultHeader}>
+              <Text style={styles.resultItem}>{selectedDemo || "Din grej"}</Text>
+              <Text style={styles.resultPrice}>{result.price} kr</Text>
             </View>
 
-            <View style={styles.timerContainer}>
-              <Text style={styles.timerTime}>
-                {Math.floor(secondsLeft / 60)}:{(secondsLeft % 60).toString().padStart(2, '0')}
+            <View style={styles.timeDisplay}>
+              <Text style={styles.timeLabel}>KOSTAR DIG</Text>
+              <Text style={styles.timeValue}>{result.hours}</Text>
+              <Text style={styles.timeUnit}>TIMMAR AV DITT LIV</Text>
+              <Text style={styles.timeComparison}>
+                {parseFloat(result.hours) >= 40 ? "💀 En hel arbetsvecka 💀" : 
+                 parseFloat(result.hours) >= 8 ? "😰 En hel arbetsdag" :
+                 "🤔 Kanske inte så farligt?"}
               </Text>
-              {secondsLeft === 0 ? (
-                <View style={styles.btnStack}>
-                  <TouchableOpacity style={styles.saveBtn} onPress={() => handleDecision(false)}>
-                    <Text style={styles.saveBtnText}>SKIPPA KÖPET 🔥</Text>
+            </View>
+
+            {/* Timer */}
+            <View style={styles.timerSection}>
+              <Text style={styles.timerLabel}>
+                {secondsLeft === 0 ? "BESLUTSTID!" : "VÄNTA"}
+              </Text>
+              <Text style={styles.timerValue}>{formatTime(secondsLeft)}</Text>
+              
+              {secondsLeft === 0 && (
+                <View style={styles.decisionButtons}>
+                  <TouchableOpacity style={styles.skipButton} onPress={() => handleDecision(false)}>
+                    <Text style={styles.skipButtonText}>✅ SKIPPA</Text>
+                    <Text style={styles.skipSubtext}>spara {result.price} kr</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.buyBtn} onPress={() => handleDecision(true)}>
-                    <Text style={styles.buyBtnText}>Köp ändå</Text>
+                  <TouchableOpacity style={styles.buyButton} onPress={() => handleDecision(true)}>
+                    <Text style={styles.buyButtonText}>😅 KÖP</Text>
+                    <Text style={styles.buySubtext}>0 kr sparat</Text>
                   </TouchableOpacity>
                 </View>
-              ) : (
-                <Text style={styles.waitMsg}>TÄNK EFTER...</Text>
+              )}
+              
+              {secondsLeft > 0 && (
+                <Text style={styles.waitHint}>andas... tänk efter...</Text>
               )}
             </View>
-          </View>
+
+            {/* Share Button */}
+            <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+              <Text style={styles.shareButtonText}>📤 DELA CHOCKEN</Text>
+            </TouchableOpacity>
+          </Animated.View>
         )}
       </ScrollView>
 
-      {/* SETTINGS MODAL */}
+      {/* SETTINGS MODAL - Förbättrad */}
       <Modal visible={showSettings} animationType="slide" transparent={true}>
-        <View style={styles.modalBg}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Din profil</Text>
-            <Text style={styles.modalLabel}>LÖN EFTER SKATT (KR/H)</Text>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>⚡️ INSTÄLLNINGAR</Text>
+            <Text style={styles.modalSubtitle}>Din timlön efter skatt</Text>
             <TextInput
               style={styles.modalInput}
               keyboardType="numeric"
               value={hourlyWage}
               onChangeText={setHourlyWage}
+              placeholder="150"
+              placeholderTextColor="#444"
             />
-            <TouchableOpacity style={styles.modalBtn} onPress={() => {
+            <Text style={styles.modalHint}>Genomsnitt: 150 kr/h för ungdomar, 200+ för vuxna</Text>
+            <TouchableOpacity style={styles.modalSaveButton} onPress={() => {
                AsyncStorage.setItem('@hourly_wage', hourlyWage);
                setShowSettings(false);
             }}>
-              <Text style={styles.modalBtnText}>SPARA</Text>
+              <Text style={styles.modalSaveText}>SPARA</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowSettings(false)}>
+              <Text style={styles.modalCloseText}>Stäng</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -175,38 +300,73 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  main: { flex: 1, backgroundColor: '#000' },
-  container: { paddingHorizontal: 20, paddingTop: 50, alignItems: 'center' },
-  header: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
-  iconCircle: { width: 45, height: 45, borderRadius: 25, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#222' },
-  logoContainer: { flex: 1, alignItems: 'center' },
-  logoText: { color: '#39FF14', fontSize: 20, fontWeight: '900', letterSpacing: 2 },
-  statsRow: { flexDirection: 'row', gap: 15, width: '100%', marginBottom: 40 },
-  statCard: { flex: 1, backgroundColor: '#080808', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#111' },
-  statLabel: { color: '#444', fontSize: 10, fontWeight: 'bold', marginBottom: 5 },
-  statValue: { color: '#fff', fontSize: 24, fontWeight: '900' },
-  calcArea: { width: '100%', alignItems: 'center', marginTop: 20 },
-  inputHint: { color: '#39FF14', fontSize: 12, fontWeight: 'bold' },
-  bigInput: { color: '#fff', fontSize: 100, fontWeight: '900', marginVertical: 20, width: '100%', textAlign: 'center' },
-  mainBtn: { backgroundColor: '#39FF14', width: '100%', padding: 22, borderRadius: 25, alignItems: 'center', shadowColor: '#39FF14', shadowRadius: 15, shadowOpacity: 0.3 },
-  mainBtnText: { color: '#000', fontWeight: '900', fontSize: 18 },
+  main: { flex: 1, backgroundColor: '#000000' },
+  container: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 40, alignItems: 'center' },
+  
+  // Header
+  header: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40, paddingHorizontal: 5 },
+  iconButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#222' },
+  iconText: { fontSize: 20 },
+  logoText: { color: '#39FF14', fontSize: 20, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
+  tagline: { color: '#333', fontSize: 10, textAlign: 'center', marginTop: 2 },
+  streakBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 4, borderWidth: 1, borderColor: '#222' },
+  streakEmoji: { fontSize: 14 },
+  streakNumber: { color: '#39FF14', fontWeight: '900', fontSize: 16 },
+  
+  // Stats
+  statsContainer: { flexDirection: 'row', backgroundColor: '#0a0a0a', borderRadius: 30, padding: 20, marginBottom: 40, borderWidth: 1, borderColor: '#1a1a1a', width: '100%' },
+  statBlock: { flex: 1, alignItems: 'center' },
+  statValue: { color: '#39FF14', fontSize: 32, fontWeight: '900' },
+  statLabel: { color: '#555', fontSize: 11, marginTop: 5 },
+  statDivider: { width: 1, backgroundColor: '#1a1a1a', marginHorizontal: 15 },
+  
+  // Calculator
+  calcArea: { width: '100%', alignItems: 'center' },
+  questionText: { color: '#fff', fontSize: 24, fontWeight: '700', marginBottom: 25, textAlign: 'center' },
+  demoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginBottom: 30 },
+  demoChip: { backgroundColor: '#111', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 30, borderWidth: 1, borderColor: '#222', alignItems: 'center' },
+  demoChipText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  demoChipPrice: { color: '#39FF14', fontSize: 12, marginTop: 4 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginBottom: 30, borderBottomWidth: 2, borderBottomColor: '#39FF14', paddingBottom: 10 },
+  priceInput: { color: '#fff', fontSize: 80, fontWeight: '900', textAlign: 'center', width: 200, padding: 0 },
+  currencySymbol: { color: '#39FF14', fontSize: 40, fontWeight: '900', marginLeft: 5 },
+  calcButton: { backgroundColor: '#39FF14', width: '100%', padding: 22, borderRadius: 60, alignItems: 'center', shadowColor: '#39FF14', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 10 },
+  calcButtonDisabled: { backgroundColor: '#1a1a1a', shadowOpacity: 0 },
+  calcButtonText: { color: '#000', fontWeight: '900', fontSize: 20, letterSpacing: 1 },
+  
+  // Result screen
   resultArea: { width: '100%', alignItems: 'center' },
-  hoursCircle: { width: 220, height: 220, borderRadius: 110, borderWidth: 8, borderColor: '#39FF14', justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
-  hoursVal: { color: '#fff', fontSize: 60, fontWeight: '900' },
-  hoursLabel: { color: '#39FF14', fontSize: 12, fontWeight: 'bold' },
-  timerContainer: { width: '100%', alignItems: 'center' },
-  timerTime: { color: '#fff', fontSize: 50, fontWeight: '800', marginBottom: 20 },
-  btnStack: { width: '100%', gap: 15 },
-  saveBtn: { backgroundColor: '#39FF14', padding: 22, borderRadius: 25, alignItems: 'center' },
-  saveBtnText: { color: '#000', fontWeight: '900', fontSize: 18 },
-  buyBtn: { padding: 20, alignItems: 'center' },
-  buyBtnText: { color: '#444', fontWeight: 'bold' },
-  waitMsg: { color: '#39FF14', fontWeight: 'bold', letterSpacing: 2 },
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', padding: 30 },
-  modalCard: { backgroundColor: '#111', padding: 40, borderRadius: 30, borderWidth: 1, borderColor: '#222' },
-  modalTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginBottom: 25 },
-  modalLabel: { color: '#444', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
-  modalInput: { backgroundColor: '#000', color: '#fff', padding: 20, borderRadius: 15, fontSize: 20, marginBottom: 25 },
-  modalBtn: { backgroundColor: '#39FF14', padding: 20, borderRadius: 15, alignItems: 'center' },
-  modalBtnText: { color: '#000', fontWeight: '900' }
+  resultHeader: { alignItems: 'center', marginBottom: 30 },
+  resultItem: { color: '#fff', fontSize: 18, opacity: 0.7 },
+  resultPrice: { color: '#39FF14', fontSize: 28, fontWeight: '900', marginTop: 5 },
+  timeDisplay: { alignItems: 'center', marginBottom: 40, padding: 30, backgroundColor: '#0a0a0a', borderRadius: 40, width: '100%', borderWidth: 1, borderColor: '#1a1a1a' },
+  timeLabel: { color: '#555', fontSize: 12, letterSpacing: 2 },
+  timeValue: { color: '#ff3333', fontSize: 80, fontWeight: '900', marginVertical: 10 },
+  timeUnit: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  timeComparison: { color: '#555', fontSize: 14, marginTop: 15 },
+  timerSection: { alignItems: 'center', marginBottom: 30, width: '100%' },
+  timerLabel: { color: '#39FF14', fontSize: 12, letterSpacing: 2, marginBottom: 10 },
+  timerValue: { color: '#fff', fontSize: 48, fontWeight: '800', fontFamily: 'monospace' },
+  waitHint: { color: '#444', fontSize: 12, marginTop: 15 },
+  decisionButtons: { flexDirection: 'row', gap: 15, width: '100%', marginTop: 20 },
+  skipButton: { flex: 1, backgroundColor: '#39FF14', padding: 20, borderRadius: 30, alignItems: 'center' },
+  skipButtonText: { color: '#000', fontWeight: '900', fontSize: 16 },
+  skipSubtext: { color: '#000', fontSize: 12, marginTop: 4, opacity: 0.7 },
+  buyButton: { flex: 1, backgroundColor: '#1a1a1a', padding: 20, borderRadius: 30, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+  buyButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  buySubtext: { color: '#555', fontSize: 12, marginTop: 4 },
+  shareButton: { marginTop: 20, padding: 15, borderRadius: 30, borderWidth: 1, borderColor: '#333', width: '100%', alignItems: 'center' },
+  shareButtonText: { color: '#fff', fontSize: 14 },
+  
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#0a0a0a', borderRadius: 40, padding: 30, borderWidth: 1, borderColor: '#1a1a1a' },
+  modalTitle: { color: '#39FF14', fontSize: 24, fontWeight: '900', marginBottom: 10, textAlign: 'center' },
+  modalSubtitle: { color: '#888', fontSize: 14, textAlign: 'center', marginBottom: 25 },
+  modalInput: { backgroundColor: '#000', color: '#fff', padding: 18, borderRadius: 20, fontSize: 24, textAlign: 'center', marginBottom: 15, fontWeight: '700' },
+  modalHint: { color: '#444', fontSize: 12, textAlign: 'center', marginBottom: 25 },
+  modalSaveButton: { backgroundColor: '#39FF14', padding: 18, borderRadius: 30, alignItems: 'center', marginBottom: 12 },
+  modalSaveText: { color: '#000', fontWeight: '900', fontSize: 18 },
+  modalCloseButton: { padding: 15, alignItems: 'center' },
+  modalCloseText: { color: '#666', fontSize: 14 }
 });
