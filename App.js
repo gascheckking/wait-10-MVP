@@ -1,9 +1,11 @@
 // App.js
-// Filnamn: Wait10_V4_Intelligence.js
+// Filnamn: Wait10_V5_Final_MVP.js
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Share, Modal } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Share, Modal, Dimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width } = Dimensions.get('window');
 
 export default function App() {
   const [price, setPrice] = useState('');
@@ -15,7 +17,7 @@ export default function App() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [smartTip, setSmartTip] = useState('');
+  const [isFounder, setIsFounder] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -37,27 +39,22 @@ export default function App() {
       const sStreak = await AsyncStorage.getItem('@streak');
       const sWage = await AsyncStorage.getItem('@hourly_wage');
       const sHistory = await AsyncStorage.getItem('@history');
+      const sFounder = await AsyncStorage.getItem('@is_founder');
       if (sMoney) setTotalSaved(parseInt(sMoney));
       if (sStreak) setStreak(parseInt(sStreak));
       if (sWage) setHourlyWage(sWage);
       if (sHistory) setHistory(JSON.parse(sHistory));
-    } catch (e) { console.log("Load error"); }
+      if (sFounder) setIsFounder(true);
+    } catch (e) { console.log("Load Error"); }
   };
 
-  const saveData = async (money, newStreak, newHistory, newWage) => {
+  const saveData = async (money, newStreak, newHistory, founderStatus) => {
     try {
       await AsyncStorage.setItem('@total_saved', money.toString());
       await AsyncStorage.setItem('@streak', newStreak.toString());
       await AsyncStorage.setItem('@history', JSON.stringify(newHistory));
-      await AsyncStorage.setItem('@hourly_wage', newWage || hourlyWage);
-    } catch (e) { console.log("Save error"); }
-  };
-
-  // Intelligence Engine - Bryggan till Gränsfri
-  const getSmartTip = (p) => {
-    if (p > 1000) return "💡 Tips: Kolla priset i Tyskland/Danmark. Du kan spara ca 4h jobb på detta.";
-    if (p > 500) return "💡 Tips: Köp begagnat på Marketplace för att spara 2h livstid.";
-    return "💡 Tips: Varje sparad hundralapp är 45 min frihet.";
+      if (founderStatus) await AsyncStorage.setItem('@is_founder', 'true');
+    } catch (e) { console.log("Save Error"); }
   };
 
   const calculate = () => {
@@ -66,7 +63,6 @@ export default function App() {
     if (p > 0 && w > 0) {
       const hrs = (p / w).toFixed(1);
       setResult({ hours: hrs, price: p });
-      setSmartTip(getSmartTip(p));
       setSecondsLeft(600);
       setIsActive(true);
     }
@@ -76,21 +72,24 @@ export default function App() {
     let newHistory = [...history];
     let newTotal = totalSaved;
     let newStreak = streak;
+    let founderEarned = isFounder;
 
     if (!bought) {
       newTotal += result.price;
       newStreak += 1;
+      founderEarned = true; // Första sparade köpet ger Founder-status
       newHistory.unshift({ id: Date.now(), hours: result.hours, price: result.price, status: 'SAVED' });
     } else {
       newStreak = 0;
       newHistory.unshift({ id: Date.now(), hours: result.hours, price: result.price, status: 'BOUGHT' });
     }
 
-    newHistory = newHistory.slice(0, 5);
+    newHistory = newHistory.slice(0, 3);
     setTotalSaved(newTotal);
     setStreak(newStreak);
     setHistory(newHistory);
-    saveData(newTotal, newStreak, newHistory);
+    setIsFounder(founderEarned);
+    saveData(newTotal, newStreak, newHistory, founderEarned);
     setResult(null);
     setPrice('');
   };
@@ -98,66 +97,79 @@ export default function App() {
   return (
     <View style={styles.main}>
       <ScrollView contentContainerStyle={styles.container}>
-        {/* TOP NAV */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setShowSettings(true)}>
-            <Text style={styles.settingsIcon}>⚙️</Text>
+        {/* TOP STATUS BAR */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.iconBtn}>
+            <Text style={styles.iconText}>⚙️</Text>
           </TouchableOpacity>
-          <View style={styles.streakBadge}>
-            <Text style={styles.streakText}>{streak} DAYS 🔥</Text>
+          {isFounder && (
+            <View style={styles.founderTag}>
+              <Text style={styles.founderLabel}>🔥 FOUNDER #2026</Text>
+            </View>
+          )}
+          <View style={styles.iconBtn}>
+            <Text style={styles.iconText}>📈</Text>
           </View>
         </View>
 
-        {/* HERO STATS */}
-        <View style={styles.hero}>
-          <Text style={styles.heroLabel}>DIN TOTALA VINST</Text>
-          <Text style={styles.heroValue}>{totalSaved} KR</Text>
+        {/* STATS OVERVIEW */}
+        <View style={styles.statsRow}>
+          <View style={styles.statLine}>
+            <Text style={styles.statLabel}>STREAK</Text>
+            <Text style={styles.statNum}>{streak} DAGAR</Text>
+          </View>
+          <View style={styles.statLine}>
+            <Text style={styles.statLabel}>VINST</Text>
+            <Text style={styles.statNum}>{totalSaved} KR</Text>
+          </View>
         </View>
 
-        {/* INPUT */}
+        {/* INPUT MODE */}
         {!result && (
-          <View style={styles.inputArea}>
+          <View style={styles.inputBody}>
+            <Text style={styles.mainPrompt}>VAD KOSTAR DET?</Text>
             <TextInput
-              style={styles.mainInput}
+              style={styles.priceInput}
               keyboardType="numeric"
               placeholder="0"
-              placeholderTextColor="#222"
+              placeholderTextColor="#1a1a1a"
               value={price}
               onChangeText={setPrice}
-              autoFocus={true}
             />
-            <Text style={styles.currencyLabel}>KRONOR</Text>
-            <TouchableOpacity style={styles.calcBtn} onPress={calculate}>
-              <Text style={styles.calcBtnText}>RÄKNA LIVSTID</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={calculate}>
+              <Text style={styles.primaryBtnText}>ANALUSERA LIVSKOSTNAD</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* RESULTS */}
+        {/* SHARE CARD MODE */}
         {result && (
-          <View style={styles.resultArea}>
-            <View style={styles.neonCard}>
-              <Text style={styles.neonHours}>{result.hours}H</Text>
-              <Text style={styles.neonSub}>AV DITT LIV</Text>
+          <View style={styles.cardContainer}>
+            <View style={styles.shareCard}>
+              <Text style={styles.cardHeader}>LIVSKOSTNAD</Text>
+              <Text style={styles.cardHours}>{result.hours}H</Text>
+              <Text style={styles.cardSub}>AV DITT LIV</Text>
+              <View style={styles.cardFooter}>
+                <Text style={styles.footerBrand}>WAIT 10 / APP</Text>
+                <Text style={styles.footerLink}>github.com/wait10</Text>
+              </View>
             </View>
-            
-            <Text style={styles.smartTipText}>{smartTip}</Text>
 
-            <View style={styles.timerWrapper}>
-              <Text style={styles.timerClock}>
+            <View style={styles.timerSection}>
+              <Text style={styles.timerDigital}>
                 {Math.floor(secondsLeft / 60)}:{(secondsLeft % 60).toString().padStart(2, '0')}
               </Text>
               {secondsLeft === 0 ? (
-                <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.saveAction} onPress={() => handleDecision(false)}>
-                    <Text style={styles.actionText}>SKIPPA</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.saveBtn} onPress={() => handleDecision(false)}>
+                    <Text style={styles.saveBtnText}>SKIPPA KÖP 💸</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.buyAction} onPress={() => handleDecision(true)}>
-                    <Text style={styles.actionText}>KÖP</Text>
+                  <TouchableOpacity style={styles.buyBtn} onPress={() => handleDecision(true)}>
+                    <Text style={styles.buyBtnText}>KÖP ÄNDÅ</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                <Text style={styles.lockedText}>BESLUT LÅST TILLS TIDEN GÅTT UT</Text>
+                <Text style={styles.timerHint}>TÄNK EFTER. ÄR DET VÄRT TIDEN?</Text>
               )}
             </View>
           </View>
@@ -165,22 +177,19 @@ export default function App() {
       </ScrollView>
 
       {/* SETTINGS MODAL */}
-      <Modal visible={showSettings} animationType="slide" transparent={true}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>INSTÄLLNINGAR</Text>
-            <Text style={styles.modalLabel}>DIN TIMLÖN (EFTER SKATT)</Text>
+      <Modal visible={showSettings} animationType="fade" transparent={true}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>PROFIL</Text>
+            <Text style={styles.modalSub}>TIMLÖN EFTER SKATT</Text>
             <TextInput
               style={styles.modalInput}
               keyboardType="numeric"
               value={hourlyWage}
               onChangeText={setHourlyWage}
             />
-            <TouchableOpacity style={styles.modalClose} onPress={() => {
-              saveData(totalSaved, streak, history, hourlyWage);
-              setShowSettings(false);
-            }}>
-              <Text style={styles.modalCloseText}>SPARA & STÄNG</Text>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setShowSettings(false)}>
+              <Text style={styles.closeBtnText}>SPARA ÄNDRINGAR</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -191,36 +200,42 @@ export default function App() {
 
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: '#000' },
-  container: { padding: 30, paddingTop: 60 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  settingsIcon: { fontSize: 24 },
-  streakBadge: { backgroundColor: '#111', paddingVertical: 5, paddingHorizontal: 15, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
-  streakText: { color: '#39FF14', fontWeight: 'bold', fontSize: 12 },
-  hero: { alignItems: 'center', marginBottom: 50 },
-  heroLabel: { color: '#444', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
-  heroValue: { color: '#fff', fontSize: 42, fontWeight: '900' },
-  inputArea: { alignItems: 'center' },
-  mainInput: { color: '#fff', fontSize: 100, fontWeight: '900', textAlign: 'center' },
-  currencyLabel: { color: '#39FF14', fontSize: 14, fontWeight: 'bold', marginTop: -10, marginBottom: 40 },
-  calcBtn: { backgroundColor: '#39FF14', width: '100%', padding: 22, borderRadius: 20, alignItems: 'center' },
-  calcBtnText: { fontWeight: '900', fontSize: 16 },
-  resultArea: { width: '100%' },
-  neonCard: { backgroundColor: '#39FF14', padding: 40, borderRadius: 40, alignItems: 'center', shadowColor: '#39FF14', shadowRadius: 20, shadowOpacity: 0.4 },
-  neonHours: { fontSize: 90, fontWeight: '900', lineHeight: 90 },
-  neonSub: { fontWeight: 'bold', fontSize: 16 },
-  smartTipText: { color: '#39FF14', textAlign: 'center', marginTop: 20, fontSize: 13, fontWeight: '600', fontStyle: 'italic' },
-  timerWrapper: { marginTop: 30, backgroundColor: '#111', padding: 30, borderRadius: 40, alignItems: 'center' },
-  timerClock: { color: '#fff', fontSize: 40, fontWeight: '800' },
-  btnRow: { flexDirection: 'row', gap: 15, marginTop: 20 },
-  saveAction: { flex: 1, backgroundColor: '#39FF14', padding: 20, borderRadius: 20, alignItems: 'center' },
-  buyAction: { flex: 1, backgroundColor: '#222', padding: 20, borderRadius: 20, alignItems: 'center' },
-  actionText: { fontWeight: '900' },
-  lockedText: { color: '#444', fontSize: 10, fontWeight: 'bold', marginTop: 15 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#111', padding: 40, borderTopLeftRadius: 40, borderTopRightRadius: 40 },
-  modalTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginBottom: 30 },
-  modalLabel: { color: '#444', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
-  modalInput: { backgroundColor: '#000', color: '#fff', padding: 20, borderRadius: 15, fontSize: 20, marginBottom: 30 },
-  modalClose: { backgroundColor: '#39FF14', padding: 20, borderRadius: 15, alignItems: 'center' },
-  modalCloseText: { fontWeight: '900' }
+  container: { paddingHorizontal: 25, paddingTop: 60, alignItems: 'center' },
+  topBar: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
+  iconBtn: { padding: 10, backgroundColor: '#111', borderRadius: 12 },
+  iconText: { fontSize: 20 },
+  founderTag: { backgroundColor: '#39FF14', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  founderLabel: { color: '#000', fontSize: 10, fontWeight: '900' },
+  statsRow: { flexDirection: 'row', width: '100%', gap: 15, marginBottom: 40 },
+  statLine: { flex: 1, borderLeftWidth: 2, borderLeftColor: '#39FF14', paddingLeft: 15 },
+  statLabel: { color: '#444', fontSize: 10, fontWeight: 'bold' },
+  statNum: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  inputBody: { width: '100%', alignItems: 'center' },
+  mainPrompt: { color: '#39FF14', fontWeight: 'bold', fontSize: 12, letterSpacing: 2 },
+  priceInput: { color: '#fff', fontSize: 100, fontWeight: '900', marginVertical: 20 },
+  primaryBtn: { backgroundColor: '#39FF14', width: '100%', padding: 25, borderRadius: 24, alignItems: 'center' },
+  primaryBtnText: { color: '#000', fontWeight: '900', fontSize: 14 },
+  cardContainer: { width: '100%' },
+  shareCard: { backgroundColor: '#39FF14', width: '100%', borderRadius: 40, padding: 40, alignItems: 'center' },
+  cardHeader: { color: '#000', fontWeight: 'bold', letterSpacing: 1 },
+  cardHours: { color: '#000', fontSize: 90, fontWeight: '900', lineHeight: 100 },
+  cardSub: { color: '#000', fontWeight: '800', fontSize: 16 },
+  cardFooter: { marginTop: 40, width: '100%', flexDirection: 'row', justifyContent: 'space-between', opacity: 0.5 },
+  footerBrand: { color: '#000', fontSize: 8, fontWeight: 'bold' },
+  footerLink: { color: '#000', fontSize: 8, fontWeight: 'bold' },
+  timerSection: { marginTop: 20, backgroundColor: '#111', borderRadius: 40, padding: 30, alignItems: 'center' },
+  timerDigital: { color: '#fff', fontSize: 42, fontWeight: '700' },
+  timerHint: { color: '#444', fontSize: 10, fontWeight: 'bold', marginTop: 10 },
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  saveBtn: { flex: 1, backgroundColor: '#39FF14', padding: 20, borderRadius: 20, alignItems: 'center' },
+  buyBtn: { flex: 1, backgroundColor: '#222', padding: 20, borderRadius: 20, alignItems: 'center' },
+  saveBtnText: { color: '#000', fontWeight: '900' },
+  buyBtnText: { color: '#fff', fontWeight: '900' },
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', padding: 30 },
+  modalCard: { backgroundColor: '#111', padding: 40, borderRadius: 40 },
+  modalTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginBottom: 20 },
+  modalSub: { color: '#444', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
+  modalInput: { backgroundColor: '#000', color: '#fff', padding: 20, borderRadius: 20, fontSize: 22, marginBottom: 30 },
+  closeBtn: { backgroundColor: '#39FF14', padding: 20, borderRadius: 20, alignItems: 'center' },
+  closeBtnText: { color: '#000', fontWeight: '900' }
 });
