@@ -1,52 +1,29 @@
 // App.js
-// PRISDOMAREN - Fota, Jämför, Spara eller Slösa 💀📸
+// THE PACT - Gör pakter med kompisar, bygg streaks tillsammans 🔥🤝
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Share, Vibration, Modal, Image, ActivityIndicator,
-  FlatList, Alert
+  StyleSheet, Text, View, TextInput, TouchableOpacity,
+  ScrollView, Modal, Alert, Switch, FlatList
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Camera } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 
 export default function App() {
-  // Kamera
-  const [hasPermission, setHasPermission] = useState(null);
-  const [cameraVisible, setCameraVisible] = useState(false);
-  const [capturedImage, setCapturedImage] = useState(null);
-  const cameraRef = useRef(null);
-
-  // App state
-  const [hourlyWage, setHourlyWage] = useState('100');
-  const [manualProduct, setManualProduct] = useState('');
-  const [manualPrice, setManualPrice] = useState('');
-  const [scannedPrice, setScannedPrice] = useState(null);
-  const [scannedProduct, setScannedProduct] = useState('');
+  // Pakter
+  const [pacts, setPacts] = useState([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   
-  // Sparade pengar
-  const [totalSaved, setTotalSaved] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [graveyard, setGraveyard] = useState([]);
-  const [currentComparison, setCurrentComparison] = useState(null);
+  // Ny pact
+  const [newPactName, setNewPactName] = useState('');
+  const [newPactDays, setNewPactDays] = useState('7');
+  const [newPactMembers, setNewPactMembers] = useState('');
+  const [newPactPenalty, setNewPactPenalty] = useState('');
   
-  // Mål
-  const [goalName, setGoalName] = useState('Sparmål');
-  const [goalAmount, setGoalAmount] = useState('5000');
-  const [showSettings, setShowSettings] = useState(false);
+  // Aktuell pact (för att visa detaljer)
+  const [selectedPact, setSelectedPact] = useState(null);
   
-  // Loading
-  const [loading, setLoading] = useState(false);
-  const [foundOffers, setFoundOffers] = useState([]);
-
-  // Kamera tillstånd
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === 'granted');
-    })();
-  }, []);
+  // Streak-notiser
+  const [lastCheckDate, setLastCheckDate] = useState(null);
 
   // Ladda data
   useEffect(() => {
@@ -55,166 +32,152 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@total_saved');
-      const str = await AsyncStorage.getItem('@streak');
-      const grave = await AsyncStorage.getItem('@graveyard');
-      const wage = await AsyncStorage.getItem('@hourly_wage');
-      const goalN = await AsyncStorage.getItem('@goal_name');
-      const goalA = await AsyncStorage.getItem('@goal_amount');
+      const savedPacts = await AsyncStorage.getItem('@pacts');
+      const lastDate = await AsyncStorage.getItem('@last_check');
       
-      if (saved) setTotalSaved(parseInt(saved));
-      if (str) setStreak(parseInt(str));
-      if (grave) setGraveyard(JSON.parse(grave));
-      if (wage) setHourlyWage(wage);
-      if (goalN) setGoalName(goalN);
-      if (goalA) setGoalAmount(goalA);
+      if (savedPacts) setPacts(JSON.parse(savedPacts));
+      if (lastDate) setLastCheckDate(lastDate);
     } catch (e) {}
   };
 
   const saveData = async () => {
     try {
-      await AsyncStorage.setItem('@total_saved', totalSaved.toString());
-      await AsyncStorage.setItem('@streak', streak.toString());
-      await AsyncStorage.setItem('@graveyard', JSON.stringify(graveyard));
-      await AsyncStorage.setItem('@hourly_wage', hourlyWage);
-      await AsyncStorage.setItem('@goal_name', goalName);
-      await AsyncStorage.setItem('@goal_amount', goalAmount);
+      await AsyncStorage.setItem('@pacts', JSON.stringify(pacts));
+      await AsyncStorage.setItem('@last_check', lastCheckDate || '');
     } catch (e) {}
   };
 
   useEffect(() => {
     saveData();
-  }, [totalSaved, streak, graveyard, hourlyWage, goalName, goalAmount]);
+  }, [pacts, lastCheckDate]);
 
-  // Simulera prissökning (mock API)
-  const searchPrices = async (productName, originalPrice) => {
-    setLoading(true);
-    
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Mockade priser från olika plattformar
-    const mockOffers = [
-      { platform: 'Vinted', price: Math.round(originalPrice * 0.4), condition: 'Begagnad - Bra skick', savings: originalPrice - Math.round(originalPrice * 0.4) },
-      { platform: 'Tradera', price: Math.round(originalPrice * 0.55), condition: 'Auktion - 2 dagar kvar', savings: originalPrice - Math.round(originalPrice * 0.55) },
-      { platform: 'Prisjakt', price: Math.round(originalPrice * 0.7), condition: 'Ny - Annan butik', savings: originalPrice - Math.round(originalPrice * 0.7) },
-      { platform: 'Amazon', price: Math.round(originalPrice * 0.85), condition: 'Ny - Prime', savings: originalPrice - Math.round(originalPrice * 0.85) },
-      { platform: 'Blocket', price: Math.round(originalPrice * 0.5), condition: 'Begagnad - Som ny', savings: originalPrice - Math.round(originalPrice * 0.5) },
-    ];
-    
-    mockOffers.sort((a, b) => a.price - b.price);
-    setFoundOffers(mockOffers);
-    setLoading(false);
-  };
-
-  // Ta bild
-  const takePicture = async () => {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      setCapturedImage(photo.uri);
-      setCameraVisible(false);
-      
-      Alert.alert(
-        "📸 Vad kostar produkten?",
-        "",
-        [
-          { text: "Avbryt", style: "cancel" },
-          { 
-            text: "Ange pris", 
-            onPress: () => {
-              Alert.prompt("Pris", "Ange priset i kronor", [
-                { text: "Avbryt" },
-                { text: "OK", onPress: (price) => {
-                  if (price) {
-                    setScannedPrice(parseInt(price));
-                    Alert.prompt("Produkt", "Vad heter produkten?", [
-                      { text: "Avbryt" },
-                      { text: "OK", onPress: (product) => {
-                        if (product) {
-                          setScannedProduct(product);
-                          searchPrices(product, parseInt(price));
-                        }
-                      }}
-                    ]);
-                  }
-                }}
-              ]);
-            }
-          }
-        ]
-      );
+  // Skapa ny pact
+  const createPact = () => {
+    if (!newPactName || !newPactMembers) {
+      Alert.alert('❌', 'Fyll i namn och minst en kompis');
+      return;
     }
-  };
-
-  // Manuell sökning (fallback)
-  const handleManualSearch = () => {
-    if (manualProduct && manualPrice) {
-      setScannedProduct(manualProduct);
-      setScannedPrice(parseInt(manualPrice));
-      searchPrices(manualProduct, parseInt(manualPrice));
-    }
-  };
-
-  // Beräkna timmar
-  const calculateHours = (price) => {
-    return (price / parseFloat(hourlyWage)).toFixed(1);
-  };
-
-  // Fräls pengar
-  const fralsBelopp = (sparatBelopp) => {
-    const newTotal = totalSaved + sparatBelopp;
-    const newStreak = streak + 1;
     
-    setTotalSaved(newTotal);
-    setStreak(newStreak);
-    
-    Vibration.vibrate(100);
-    
-    Alert.alert(
-      "🙏 FRÄLST!",
-      `Du sparade ${sparatBelopp} kr!\nStreak: ${newStreak} dagar`,
-      [{ text: "🔥 Grymt!" }]
-    );
-    
-    setCurrentComparison(null);
-    setScannedProduct('');
-    setScannedPrice(null);
-    setFoundOffers([]);
-    setManualProduct('');
-    setManualPrice('');
-  };
-
-  // Begrav pengar
-  const begravBelopp = (slosatBelopp, productName) => {
-    const newStreak = 0;
-    setStreak(newStreak);
-    
-    const deathMessage = `💀 Du slösade ${slosatBelopp} kr på ${productName} - kunde sparat genom att jämföra priser`;
-    
-    setGraveyard([{
+    const membersList = newPactMembers.split(',').map(m => m.trim());
+    const newPact = {
       id: Date.now().toString(),
-      item: productName,
-      amount: slosatBelopp,
-      message: deathMessage,
-      timestamp: new Date().toLocaleTimeString()
-    }, ...graveyard]);
+      name: newPactName,
+      totalDays: parseInt(newPactDays),
+      completedDays: 0,
+      members: membersList,
+      penalty: newPactPenalty || 'Skäms',
+      status: 'active', // active, completed, failed
+      currentStreak: 0,
+      lastConfirmed: null
+    };
     
-    Vibration.vibrate(200);
-    
-    Alert.alert(
-      "💀 BEGRAVT!",
-      `Du förlorade ${slosatBelopp} kr.\nStreak bruten. Börja om imorgon.`,
-      [{ text: "😭" }]
-    );
-    
-    setCurrentComparison(null);
-    setScannedProduct('');
-    setScannedPrice(null);
-    setFoundOffers([]);
-    setManualProduct('');
-    setManualPrice('');
+    setPacts([newPact, ...pacts]);
+    setShowCreateModal(false);
+    resetForm();
   };
 
-  const goalProgress = Math.min(100, (totalSaved / parseFloat(goalAmount)) * 100);
+  const resetForm = () => {
+    setNewPactName('');
+    setNewPactDays('7');
+    setNewPactMembers('');
+    setNewPactPenalty('');
+  };
+
+  // Bekräfta dagens framsteg
+  const confirmDay = (pactId) => {
+    Alert.alert(
+      '✅ Bekräfta dagens framsteg',
+      'Har du och alla andra i pacten klarat utmaningen idag?',
+      [
+        { text: 'Nej, inte än', style: 'cancel' },
+        { 
+          text: 'Ja! 🔥', 
+          onPress: () => {
+            setPacts(prevPacts => 
+              prevPacts.map(pact => {
+                if (pact.id === pactId && pact.completedDays < pact.totalDays) {
+                  const newCompleted = pact.completedDays + 1;
+                  const newStreak = pact.currentStreak + 1;
+                  const newStatus = newCompleted >= pact.totalDays ? 'completed' : 'active';
+                  
+                  return {
+                    ...pact,
+                    completedDays: newCompleted,
+                    currentStreak: newStreak,
+                    status: newStatus,
+                    lastConfirmed: new Date().toISOString()
+                  };
+                }
+                return pact;
+              })
+            );
+          }
+        }
+      ]
+    );
+  };
+
+  // Misslyckades (bryt streak)
+  const failDay = (pactId) => {
+    Alert.alert(
+      '💀 Misslyckades?',
+      'Om du eller någon i pacten misslyckades, bryts streaket och straff utdelas.',
+      [
+        { text: 'Vi klarade det!', style: 'cancel' },
+        { 
+          text: 'Ja, vi misslyckades 😭', 
+          onPress: () => {
+            setPacts(prevPacts => 
+              prevPacts.map(pact => {
+                if (pact.id === pactId) {
+                  let penaltyMessage = `Straff: ${pact.penalty}`;
+                  if (pact.penalty.includes('kr') || pact.penalty.includes('Swish')) {
+                    penaltyMessage = `💸 Straff: ${pact.penalty}`;
+                  }
+                  Alert.alert('⚡️ STRAFF ⚡️', penaltyMessage);
+                  
+                  return {
+                    ...pact,
+                    currentStreak: 0,
+                    lastConfirmed: new Date().toISOString()
+                  };
+                }
+                return pact;
+              })
+            );
+          }
+        }
+      ]
+    );
+  };
+
+  // Ta bort pact
+  const deletePact = (pactId) => {
+    Alert.alert(
+      '🗑️ Ta bort pact?',
+      'Alla framsteg försvinner.',
+      [
+        { text: 'Avbryt', style: 'cancel' },
+        { 
+          text: 'Ta bort', 
+          style: 'destructive',
+          onPress: () => setPacts(prevPacts => prevPacts.filter(p => p.id !== pactId))
+        }
+      ]
+    );
+  };
+
+  const getProgressPercentage = (completed, total) => {
+    return (completed / total) * 100;
+  };
+
+  const getStreakEmoji = (streak) => {
+    if (streak >= 30) return '👑';
+    if (streak >= 7) return '🔥🔥';
+    if (streak >= 3) return '🔥';
+    if (streak > 0) return '🌱';
+    return '💀';
+  };
 
   return (
     <View style={styles.main}>
@@ -222,250 +185,148 @@ export default function App() {
         
         {/* HEADER */}
         <View style={styles.header}>
-          <Text style={styles.logo}>📸 PRISDOMAREN</Text>
-          <Text style={styles.logoSub}>SPARA ELLER SLÖSA</Text>
+          <Text style={styles.logo}>🤝 THE PACT</Text>
+          <Text style={styles.logoSub}>GÖR PAKTER MED KOMPISAR</Text>
         </View>
 
-        {/* STATS */}
+        {/* STATS SUMMARY */}
         <View style={styles.statsCard}>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>SPARAT</Text>
-              <Text style={styles.statGreen}>{totalSaved} kr</Text>
+              <Text style={styles.statLabel}>AKTIVA PAKTER</Text>
+              <Text style={styles.statValue}>{pacts.filter(p => p.status === 'active').length}</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>STREAK</Text>
-              <Text style={styles.statWhite}>🔥 {streak}</Text>
+              <Text style={styles.statLabel}>GENOMFÖRDA</Text>
+              <Text style={styles.statValue}>{pacts.filter(p => p.status === 'completed').length}</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>MÅL</Text>
-              <Text style={styles.statGreen}>{Math.round(goalProgress)}%</Text>
+              <Text style={styles.statLabel}>TOTAL STREAK</Text>
+              <Text style={styles.statValue}>{pacts.reduce((sum, p) => sum + p.currentStreak, 0)}</Text>
             </View>
           </View>
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressBar, { width: `${goalProgress}%` }]} />
-          </View>
-          <Text style={styles.goalText}>{goalName}: {totalSaved}/{parseInt(goalAmount).toLocaleString()} kr</Text>
         </View>
 
-        {/* HUVUDFUNKTION */}
-        {!currentComparison && !loading && foundOffers.length === 0 && (
-          <View style={styles.mainCard}>
-            <Text style={styles.cardTitle}>⚖️ VAD VILL DU KÖPA?</Text>
-            
-            <TouchableOpacity style={styles.cameraBtn} onPress={() => setCameraVisible(true)}>
-              <Text style={styles.cameraBtnText}>📸 FOTA PRISLAPP</Text>
-              <Text style={styles.cameraSubtext}>Rikta kameran mot priset</Text>
-            </TouchableOpacity>
-            
-            <Text style={styles.orText}>ELLER</Text>
-            
-            <TextInput
-              style={styles.productInput}
-              placeholder="Produktnamn (t.ex. Nike Air Max)"
-              placeholderTextColor="#444"
-              value={manualProduct}
-              onChangeText={setManualProduct}
-            />
-            
-            <TextInput
-              style={styles.priceInput}
-              keyboardType="numeric"
-              placeholder="Pris i butik"
-              placeholderTextColor="#444"
-              value={manualPrice}
-              onChangeText={setManualPrice}
-            />
-            
-            <TouchableOpacity 
-              style={[styles.searchBtn, (!manualProduct || !manualPrice) && styles.disabledBtn]}
-              onPress={handleManualSearch}
-              disabled={!manualProduct || !manualPrice}
-            >
-              <Text style={styles.searchBtnText}>🔍 JÄMFÖR PRISER ONLINE</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* LADDAR */}
-        {loading && (
-          <View style={styles.loadingCard}>
-            <ActivityIndicator size="large" color="#39FF14" />
-            <Text style={styles.loadingText}>Söker bästa priser...</Text>
-            <Text style={styles.loadingSub}>Kollar Vinted, Tradera, Prisjakt...</Text>
-          </View>
-        )}
-
-        {/* RESULTAT */}
-        {!loading && foundOffers.length > 0 && !currentComparison && (
-          <View style={styles.resultsCard}>
-            <Text style={styles.resultsTitle}>🔍 BILLIGASTE ALTERNATIV</Text>
-            <Text style={styles.originalProduct}>{scannedProduct}</Text>
-            <Text style={styles.originalPrice}>Butik: {scannedPrice} kr ({calculateHours(scannedPrice)} timmar)</Text>
-            
-            <FlatList
-              data={foundOffers}
-              keyExtractor={(item, index) => index.toString()}
-              renderItem={({ item, index }) => (
-                <TouchableOpacity 
-                  style={[styles.offerCard, index === 0 && styles.bestOffer]}
-                  onPress={() => {
-                    setCurrentComparison({
-                      platform: item.platform,
-                      price: item.price,
-                      sparat: item.savings,
-                      hoursSaved: (item.savings / parseFloat(hourlyWage)).toFixed(1),
-                      product: scannedProduct
-                    });
-                  }}
-                >
-                  <View style={styles.offerHeader}>
-                    <Text style={styles.offerPlatform}>{item.platform}</Text>
-                    {index === 0 && <Text style={styles.bestBadge}>🏆 BILLIGAST</Text>}
-                  </View>
-                  <Text style={styles.offerPrice}>{item.price} kr</Text>
-                  <Text style={styles.offerCondition}>{item.condition}</Text>
-                  <View style={styles.offerSavings}>
-                    <Text style={styles.savingsText}>💀 Sparar {item.savings} kr ({(item.savings / parseFloat(hourlyWage)).toFixed(1)} timmar)</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-              scrollEnabled={false}
-            />
-          </View>
-        )}
-
-        {/* BESLUT */}
-        {currentComparison && (
-          <View style={styles.decisionCard}>
-            <Text style={styles.decisionTitle}>⚡️ VÄLJ DITT ÖDE ⚡️</Text>
-            
-            <View style={styles.comparisonBox}>
-              <View style={styles.badOption}>
-                <Text style={styles.badLabel}>💀 SLÖSA</Text>
-                <Text style={styles.badPrice}>{scannedPrice} kr</Text>
-                <Text style={styles.badTime}>{calculateHours(scannedPrice)} timmar</Text>
-                <Text style={styles.badStore}>Butik</Text>
-              </View>
-              
-              <View style={styles.vsIcon}>
-                <Text style={styles.vsText}>VS</Text>
-              </View>
-              
-              <View style={styles.goodOption}>
-                <Text style={styles.goodLabel}>🙏 SPARA</Text>
-                <Text style={styles.goodPrice}>{currentComparison.price} kr</Text>
-                <Text style={styles.goodTime}>{currentComparison.hoursSaved} timmar sparade</Text>
-                <Text style={styles.goodStore}>{currentComparison.platform}</Text>
-              </View>
-            </View>
-            
-            <View style={styles.savingsHighlight}>
-              <Text style={styles.savingsHighlightText}>
-                🎉 Du sparar {currentComparison.sparat} kr ({currentComparison.hoursSaved} timmar)
-              </Text>
-            </View>
-            
-            <View style={styles.decisionButtons}>
-              <TouchableOpacity 
-                style={styles.fralsBtn}
-                onPress={() => fralsBelopp(currentComparison.sparat)}
-              >
-                <Text style={styles.fralsBtnText}>🙏 FRÄLS PENGARNA</Text>
-                <Text style={styles.fralsSubtext}>Köp billigare online</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.slosaBtn}
-                onPress={() => begravBelopp(currentComparison.sparat, scannedProduct)}
-              >
-                <Text style={styles.slosaBtnText}>💀 KÖP ÄNDÅ I BUTIK</Text>
-                <Text style={styles.slosaSubtext}>Slösa pengar, bryt streak</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* GRAVEYARD */}
-        {graveyard.length > 0 && (
-          <View style={styles.graveyardSection}>
-            <Text style={styles.graveyardTitle}>🪦 GRAVEYARD ({graveyard.length})</Text>
-            {graveyard.slice(0, 3).map((item) => (
-              <View key={item.id} style={styles.tombstone}>
-                <Text style={styles.tombstoneIcon}>🪦</Text>
-                <View style={styles.tombstoneContent}>
-                  <Text style={styles.tombstoneItem}>{item.item}</Text>
-                  <Text style={styles.tombstoneMsg}>{item.message}</Text>
-                  <Text style={styles.tombstoneTime}>{item.timestamp}</Text>
-                </View>
-                <Text style={styles.tombstoneAmount}>-{item.amount} kr</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* SETTINGS BUTTON */}
-        <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
-          <Text style={styles.settingsBtnText}>⚙️ {hourlyWage} KR/H • {goalName}</Text>
+        {/* SKAPA NY PACT */}
+        <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreateModal(true)}>
+          <Text style={styles.createBtnText}>+ SKAPA NY PACT</Text>
         </TouchableOpacity>
+
+        {/* LISTA ÖVER PAKTER */}
+        {pacts.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyEmoji}>🤝</Text>
+            <Text style={styles.emptyTitle}>Inga pakter än</Text>
+            <Text style={styles.emptyText}>Skapa en pact med dina kompisar och börja bygga streaks tillsammans!</Text>
+          </View>
+        ) : (
+          pacts.map(pact => (
+            <View key={pact.id} style={styles.pactCard}>
+              <View style={styles.pactHeader}>
+                <View style={styles.pactTitleRow}>
+                  <Text style={styles.pactEmoji}>{getStreakEmoji(pact.currentStreak)}</Text>
+                  <Text style={styles.pactName}>{pact.name}</Text>
+                </View>
+                <TouchableOpacity onPress={() => deletePact(pact.id)}>
+                  <Text style={styles.deleteIcon}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.membersRow}>
+                <Text style={styles.membersLabel}>Medlemmar:</Text>
+                <Text style={styles.membersList}>{pact.members.join(', ')}</Text>
+              </View>
+              
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBar, { width: `${getProgressPercentage(pact.completedDays, pact.totalDays)}%` }]} />
+                </View>
+                <Text style={styles.progressText}>{pact.completedDays}/{pact.totalDays} dagar</Text>
+              </View>
+              
+              <View style={styles.streakRow}>
+                <Text style={styles.streakLabel}>🔥 Streak:</Text>
+                <Text style={styles.streakValue}>{pact.currentStreak} dagar</Text>
+              </View>
+              
+              <View style={styles.penaltyRow}>
+                <Text style={styles.penaltyLabel}>⚡️ Straff:</Text>
+                <Text style={styles.penaltyValue}>{pact.penalty}</Text>
+              </View>
+              
+              {pact.status === 'completed' ? (
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedText}>🎉 GENOMFÖRD! 🎉</Text>
+                </View>
+              ) : (
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity style={styles.confirmBtn} onPress={() => confirmDay(pact.id)}>
+                    <Text style={styles.confirmBtnText}>✅ KLARADE DAGEN</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.failBtn} onPress={() => failDay(pact.id)}>
+                    <Text style={styles.failBtnText}>💀 MISSLYCKADES</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          ))
+        )}
       </ScrollView>
 
-      {/* KAMERA MODAL */}
-      <Modal visible={cameraVisible} animationType="slide">
-        <View style={styles.cameraContainer}>
-          {hasPermission === null && <Text style={styles.cameraText}>Begär kameraåtkomst...</Text>}
-          {hasPermission === false && <Text style={styles.cameraText}>Ingen kameratillgång</Text>}
-          {hasPermission && (
-            <Camera style={styles.camera} ref={cameraRef} type={Camera.Constants.Type.back}>
-              <View style={styles.cameraControls}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setCameraVisible(false)}>
-                  <Text style={styles.cancelBtnText}>AVBRYT</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
-                  <View style={styles.captureCircle} />
-                </TouchableOpacity>
-              </View>
-            </Camera>
-          )}
-        </View>
-      </Modal>
-
-      {/* SETTINGS MODAL */}
-      <Modal visible={showSettings} animationType="slide" transparent={true}>
+      {/* SKAPA PACT MODAL */}
+      <Modal visible={showCreateModal} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>⚙️ INSTÄLLNINGAR</Text>
+            <Text style={styles.modalTitle}>🤝 SKAPA NY PACT</Text>
             
-            <Text style={styles.modalLabel}>TIMLÖN (KR/H)</Text>
+            <Text style={styles.modalLabel}>VAD ÄR UTMANINGEN?</Text>
             <TextInput
               style={styles.modalInput}
-              keyboardType="numeric"
-              value={hourlyWage}
-              onChangeText={setHourlyWage}
-              placeholder="100"
+              value={newPactName}
+              onChangeText={setNewPactName}
+              placeholder="t.ex. Ingen skräpmat, Träna varje dag"
+              placeholderTextColor="#444"
             />
-            <Text style={styles.modalHint}>Standard: 100 kr/h (ungdomar/studenter)</Text>
             
-            <Text style={styles.modalLabel}>SPARMÅL</Text>
+            <Text style={styles.modalLabel}>HUR MÅNGA DAGAR?</Text>
+            <View style={styles.daysSelector}>
+              {[3, 7, 14, 30, 60].map(days => (
+                <TouchableOpacity
+                  key={days}
+                  style={[styles.dayOption, newPactDays === days.toString() && styles.dayOptionSelected]}
+                  onPress={() => setNewPactDays(days.toString())}
+                >
+                  <Text style={[styles.dayOptionText, newPactDays === days.toString() && styles.dayOptionTextSelected]}>{days}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <Text style={styles.modalLabel}>KOMPISAR (separera med kommatecken)</Text>
             <TextInput
               style={styles.modalInput}
-              value={goalName}
-              onChangeText={setGoalName}
-              placeholder="Sparmål"
+              value={newPactMembers}
+              onChangeText={setNewPactMembers}
+              placeholder="t.ex. Ella, Max, Clara"
+              placeholderTextColor="#444"
             />
             
-            <Text style={styles.modalLabel}>MÅLBELOPP (KR)</Text>
+            <Text style={styles.modalLabel}>STRAFF VID MISS (vad händer?)</Text>
             <TextInput
               style={styles.modalInput}
-              keyboardType="numeric"
-              value={goalAmount}
-              onChangeText={setGoalAmount}
-              placeholder="5000"
+              value={newPactPenalty}
+              onChangeText={setNewPactPenalty}
+              placeholder="t.ex. Bjuder på fika, Swishar 100 kr"
+              placeholderTextColor="#444"
             />
             
-            <TouchableOpacity style={styles.modalClose} onPress={() => setShowSettings(false)}>
-              <Text style={styles.modalCloseText}>SPARA</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setShowCreateModal(false)}>
+                <Text style={styles.cancelModalText}>AVBRYT</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.createModalBtn} onPress={createPact}>
+                <Text style={styles.createModalText}>SKAPA</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -477,103 +338,72 @@ const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: '#000000' },
   container: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 40 },
   
-  header: { alignItems: 'center', marginBottom: 25 },
-  logo: { color: '#39FF14', fontSize: 26, fontWeight: '900', letterSpacing: 2 },
-  logoSub: { color: '#ff3333', fontSize: 10, letterSpacing: 3, marginTop: 3 },
+  header: { alignItems: 'center', marginBottom: 30 },
+  logo: { color: '#39FF14', fontSize: 28, fontWeight: '900', letterSpacing: 2 },
+  logoSub: { color: '#39FF14', fontSize: 10, letterSpacing: 2, marginTop: 3, opacity: 0.7 },
   
-  statsCard: { backgroundColor: '#111', borderRadius: 20, padding: 20, marginBottom: 25, borderWidth: 1, borderColor: '#222' },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 15 },
+  statsCard: { backgroundColor: '#111', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#222' },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-around' },
   statItem: { alignItems: 'center' },
-  statLabel: { color: '#555', fontSize: 10, marginBottom: 5 },
-  statGreen: { color: '#39FF14', fontSize: 22, fontWeight: '900' },
-  statWhite: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  progressContainer: { height: 6, backgroundColor: '#1a1a1a', borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
-  progressBar: { height: '100%', backgroundColor: '#39FF14', borderRadius: 3 },
-  goalText: { color: '#555', fontSize: 10, textAlign: 'center' },
+  statLabel: { color: '#555', fontSize: 10, marginBottom: 8 },
+  statValue: { color: '#39FF14', fontSize: 28, fontWeight: '900' },
   
-  mainCard: { backgroundColor: '#111', borderRadius: 30, padding: 25, borderWidth: 1, borderColor: '#222' },
-  cardTitle: { color: '#39FF14', fontSize: 12, textAlign: 'center', marginBottom: 20 },
-  cameraBtn: { backgroundColor: '#39FF14', width: '100%', padding: 20, borderRadius: 40, alignItems: 'center', marginBottom: 10 },
-  cameraBtnText: { color: '#000', fontWeight: '900', fontSize: 18 },
-  cameraSubtext: { color: '#000', fontSize: 10, marginTop: 5, opacity: 0.7 },
-  orText: { color: '#444', fontSize: 12, textAlign: 'center', marginVertical: 15 },
-  productInput: { width: '100%', backgroundColor: '#0a0a0a', color: '#fff', padding: 15, borderRadius: 15, fontSize: 16, textAlign: 'center', borderWidth: 1, borderColor: '#222', marginBottom: 12 },
-  priceInput: { width: '100%', backgroundColor: '#0a0a0a', color: '#fff', padding: 15, borderRadius: 15, fontSize: 24, textAlign: 'center', fontWeight: '900', borderWidth: 1, borderColor: '#222', marginBottom: 12 },
-  searchBtn: { backgroundColor: '#39FF14', width: '100%', padding: 18, borderRadius: 40, alignItems: 'center', marginTop: 5 },
-  disabledBtn: { backgroundColor: '#1a1a1a' },
-  searchBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
+  createBtn: { backgroundColor: '#39FF14', padding: 18, borderRadius: 40, alignItems: 'center', marginBottom: 25 },
+  createBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
   
-  loadingCard: { backgroundColor: '#111', borderRadius: 30, padding: 40, alignItems: 'center', borderWidth: 1, borderColor: '#222' },
-  loadingText: { color: '#39FF14', fontSize: 16, marginTop: 15 },
-  loadingSub: { color: '#555', fontSize: 12, marginTop: 5 },
+  emptyCard: { backgroundColor: '#111', borderRadius: 30, padding: 40, alignItems: 'center', borderWidth: 1, borderColor: '#222' },
+  emptyEmoji: { fontSize: 50, marginBottom: 15 },
+  emptyTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
+  emptyText: { color: '#555', fontSize: 14, textAlign: 'center' },
   
-  resultsCard: { backgroundColor: '#111', borderRadius: 30, padding: 20, borderWidth: 1, borderColor: '#222' },
-  resultsTitle: { color: '#39FF14', fontSize: 12, textAlign: 'center', marginBottom: 15 },
-  originalProduct: { color: '#fff', fontSize: 20, fontWeight: 'bold', textAlign: 'center' },
-  originalPrice: { color: '#888', fontSize: 14, textAlign: 'center', marginBottom: 20 },
-  offerCard: { backgroundColor: '#0a0a0a', borderRadius: 20, padding: 15, marginBottom: 10, borderWidth: 1, borderColor: '#222' },
-  bestOffer: { borderColor: '#39FF14', borderWidth: 2 },
-  offerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  offerPlatform: { color: '#39FF14', fontSize: 16, fontWeight: 'bold' },
-  bestBadge: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
-  offerPrice: { color: '#fff', fontSize: 24, fontWeight: '900' },
-  offerCondition: { color: '#666', fontSize: 12, marginTop: 3 },
-  offerSavings: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  savingsText: { color: '#ff3333', fontSize: 12, fontWeight: 'bold' },
+  pactCard: { backgroundColor: '#111', borderRadius: 20, padding: 18, marginBottom: 15, borderWidth: 1, borderColor: '#222' },
+  pactHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  pactTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pactEmoji: { fontSize: 20 },
+  pactName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  deleteIcon: { fontSize: 18, color: '#555' },
   
-  decisionCard: { backgroundColor: '#111', borderRadius: 30, padding: 20, borderWidth: 2, borderColor: '#ff3333' },
-  decisionTitle: { color: '#ff3333', fontSize: 14, textAlign: 'center', marginBottom: 20, fontWeight: 'bold' },
-  comparisonBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  badOption: { flex: 1, backgroundColor: '#1a0a0a', borderRadius: 20, padding: 15, alignItems: 'center' },
-  badLabel: { color: '#ff3333', fontSize: 12, marginBottom: 8 },
-  badPrice: { color: '#ff3333', fontSize: 20, fontWeight: '900' },
-  badTime: { color: '#555', fontSize: 10, marginTop: 5 },
-  badStore: { color: '#444', fontSize: 10, marginTop: 3 },
-  goodOption: { flex: 1, backgroundColor: '#0a1a0a', borderRadius: 20, padding: 15, alignItems: 'center' },
-  goodLabel: { color: '#39FF14', fontSize: 12, marginBottom: 8 },
-  goodPrice: { color: '#39FF14', fontSize: 20, fontWeight: '900' },
-  goodTime: { color: '#39FF14', fontSize: 10, marginTop: 5 },
-  goodStore: { color: '#39FF14', fontSize: 10, marginTop: 3 },
-  vsIcon: { marginHorizontal: 10 },
-  vsText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
-  savingsHighlight: { backgroundColor: '#0a0a0a', borderRadius: 15, padding: 15, alignItems: 'center', marginBottom: 20 },
-  savingsHighlightText: { color: '#39FF14', fontSize: 14, fontWeight: 'bold', textAlign: 'center' },
-  decisionButtons: { gap: 12 },
-  fralsBtn: { backgroundColor: '#39FF14', padding: 18, borderRadius: 40, alignItems: 'center' },
-  fralsBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
-  fralsSubtext: { color: '#000', fontSize: 10, marginTop: 3, opacity: 0.7 },
-  slosaBtn: { backgroundColor: '#1a1a1a', padding: 18, borderRadius: 40, alignItems: 'center', borderWidth: 1, borderColor: '#ff3333' },
-  slosaBtnText: { color: '#ff3333', fontWeight: '900', fontSize: 16 },
-  slosaSubtext: { color: '#ff3333', fontSize: 10, marginTop: 3, opacity: 0.7 },
+  membersRow: { flexDirection: 'row', marginBottom: 12, flexWrap: 'wrap' },
+  membersLabel: { color: '#555', fontSize: 12, marginRight: 5 },
+  membersList: { color: '#888', fontSize: 12 },
   
-  graveyardSection: { marginTop: 25, borderTopWidth: 1, borderTopColor: '#222', paddingTop: 20 },
-  graveyardTitle: { color: '#ff3333', fontSize: 12, marginBottom: 12 },
-  tombstone: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0d0d0d', borderRadius: 12, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#ff3333' },
-  tombstoneIcon: { fontSize: 20, marginRight: 10 },
-  tombstoneContent: { flex: 1 },
-  tombstoneItem: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  tombstoneMsg: { color: '#555', fontSize: 10, marginTop: 2 },
-  tombstoneTime: { color: '#333', fontSize: 8, marginTop: 2 },
-  tombstoneAmount: { color: '#ff3333', fontSize: 13, fontWeight: 'bold' },
+  progressContainer: { marginBottom: 12 },
+  progressBarBg: { height: 8, backgroundColor: '#1a1a1a', borderRadius: 4, overflow: 'hidden', marginBottom: 5 },
+  progressBar: { height: '100%', backgroundColor: '#39FF14', borderRadius: 4 },
+  progressText: { color: '#555', fontSize: 10, textAlign: 'right' },
   
-  settingsBtn: { marginTop: 20, padding: 12, alignItems: 'center' },
-  settingsBtnText: { color: '#333', fontSize: 12 },
+  streakRow: { flexDirection: 'row', marginBottom: 8 },
+  streakLabel: { color: '#555', fontSize: 12, marginRight: 8 },
+  streakValue: { color: '#39FF14', fontSize: 12, fontWeight: 'bold' },
   
-  cameraContainer: { flex: 1, backgroundColor: '#000' },
-  camera: { flex: 1 },
-  cameraText: { color: '#fff', textAlign: 'center', marginTop: 50 },
-  cameraControls: { position: 'absolute', bottom: 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 30 },
-  cancelBtn: { backgroundColor: '#333', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30 },
-  cancelBtnText: { color: '#fff', fontWeight: 'bold' },
-  captureBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
-  captureCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
+  penaltyRow: { flexDirection: 'row', marginBottom: 15 },
+  penaltyLabel: { color: '#555', fontSize: 12, marginRight: 8 },
+  penaltyValue: { color: '#ff3333', fontSize: 12 },
+  
+  actionButtons: { flexDirection: 'row', gap: 10 },
+  confirmBtn: { flex: 1, backgroundColor: '#39FF14', padding: 12, borderRadius: 25, alignItems: 'center' },
+  confirmBtnText: { color: '#000', fontWeight: '900', fontSize: 12 },
+  failBtn: { flex: 1, backgroundColor: '#1a1a1a', padding: 12, borderRadius: 25, alignItems: 'center', borderWidth: 1, borderColor: '#ff3333' },
+  failBtnText: { color: '#ff3333', fontWeight: '900', fontSize: 12 },
+  
+  completedBadge: { backgroundColor: '#0a1a0a', padding: 12, borderRadius: 25, alignItems: 'center', borderWidth: 1, borderColor: '#39FF14' },
+  completedText: { color: '#39FF14', fontWeight: '900', fontSize: 12 },
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', padding: 20 },
   modalCard: { backgroundColor: '#111', borderRadius: 30, padding: 25, borderWidth: 1, borderColor: '#222' },
   modalTitle: { color: '#39FF14', fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 20 },
-  modalLabel: { color: '#555', fontSize: 12, marginBottom: 8, marginTop: 15 },
-  modalInput: { backgroundColor: '#0a0a0a', color: '#fff', padding: 15, borderRadius: 15, fontSize: 18, textAlign: 'center' },
-  modalHint: { color: '#333', fontSize: 10, marginTop: 5, textAlign: 'center' },
-  modalClose: { backgroundColor: '#39FF14', padding: 16, borderRadius: 30, alignItems: 'center', marginTop: 25 },
-  modalCloseText: { color: '#000', fontWeight: '900', fontSize: 16 }
+  modalLabel: { color: '#555', fontSize: 10, marginBottom: 8, marginTop: 12 },
+  modalInput: { backgroundColor: '#0a0a0a', color: '#fff', padding: 15, borderRadius: 15, fontSize: 14, borderWidth: 1, borderColor: '#222' },
+  
+  daysSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 5 },
+  dayOption: { backgroundColor: '#0a0a0a', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 30, borderWidth: 1, borderColor: '#222' },
+  dayOptionSelected: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
+  dayOptionText: { color: '#888', fontSize: 14, fontWeight: 'bold' },
+  dayOptionTextSelected: { color: '#000' },
+  
+  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 25 },
+  cancelModalBtn: { flex: 1, backgroundColor: '#1a1a1a', padding: 15, borderRadius: 30, alignItems: 'center', borderWidth: 1, borderColor: '#222' },
+  cancelModalText: { color: '#888', fontWeight: 'bold' },
+  createModalBtn: { flex: 1, backgroundColor: '#39FF14', padding: 15, borderRadius: 30, alignItems: 'center' },
+  createModalText: { color: '#000', fontWeight: '900' }
 });
